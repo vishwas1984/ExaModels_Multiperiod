@@ -104,7 +104,7 @@ parse_ac_power_data(filename, backend) = convert_data(parse_ac_power_data(filena
 
 function ac_power_model(
     filename;
-    backend = nothing,
+    backend= nothing,
     T = Float64
     )
 
@@ -235,7 +235,7 @@ function ac_power_model(
 
     o = objective(
         w,
-        g.cost1 * pg[g.i]^2 + g.cost2 * pg[g.i] + g.cost3
+        g.cost1 * pg[1,g.i]^2 + g.cost2 * pg[1,g.i] + g.cost3
         for g in data.gen)
 
     # c1 = constraint(
@@ -337,7 +337,6 @@ function ac_power_model(
         va[t, b.f_bus] - va[t, b.t_bus] for (t,b) in itr_vm1;
             # lcon = data.angmin,
             # ucon = data.angmax
-
             lcon = [data.angmin[g.i] for (t,g) in itr_vm1],
             ucon = [data.angmax[g.i] for (t,g) in itr_vm1]
             )
@@ -356,18 +355,25 @@ function ac_power_model(
     #          )
 
 
-    
-    c7_1 = constraint(
-        w,
-        p[1, b.f_idx]^2 + q[1, b.f_idx]^2 - b.rate_a_sq for b in data.branch;
-            lcon = fill!(similar(data.branch,Float64,length(data.branch)),-Inf)
-            )
+    # c7_lcon = vcat(
+    #     (
+    #         fill!(similar(data.branch, Float64, length(data.branch)), -Inf)
+    #         for t = 1:2
+    #     )...
+    # )
+
     
     c7 = constraint(
         w,
-        p[2, b.f_idx]^2 + q[2, b.f_idx]^2 - b.rate_a_sq for b in data.branch;
-            lcon = fill!(similar(data.branch,Float64,length(data.branch)),-Inf)
+        p[t, b.f_idx]^2 + q[t, b.f_idx]^2 - b.rate_a_sq for (t,b) in itr_vm1;
+            lcon = -Inf
             )
+    
+    # c7 = constraint(
+    #     w,
+    #     p[2, b.f_idx]^2 + q[2, b.f_idx]^2 - b.rate_a_sq for b in data.branch;
+    #         lcon = -Inf
+    #         )
     
     # c8 = constraint(
     #     w,
@@ -375,17 +381,17 @@ function ac_power_model(
     #         # lcon = fill!(similar(data.branch,Float64,length(data.branch)),-Inf)
     #         )
     
-    c8_1 = constraint(
+    c8 = constraint(
         w,
-        p[1, b.t_idx]^2 + q[1, b.t_idx]^2 - b.rate_a_sq for b in data.branch;
-            lcon = fill!(similar(data.branch,Float64,length(data.branch)),-Inf)
+        p[t, b.t_idx]^2 + q[t, b.t_idx]^2 - b.rate_a_sq for (t,b) in itr_vm1;
+            lcon = -Inf
             )
     
-    c8_1 = constraint(
-        w,
-        p[2, b.t_idx]^2 + q[2, b.t_idx]^2 - b.rate_a_sq for b in data.branch;
-        lcon = fill!(similar(data.branch,Float64,length(data.branch)),-Inf)
-    )    
+    # c8_2 = constraint(
+    #     w,
+    #     p[2, b.t_idx]^2 + q[2, b.t_idx]^2 - b.rate_a_sq for b in data.branch;
+    #     lcon = -Inf
+    # )    
 
     c9 = constraint(
         w,
@@ -412,18 +418,32 @@ function ac_power_model(
     #     - b.bs * vm_1[b.i]^2
     #     for b in data.bus)
 
+
+    itr_c11 = [(t,a.bus + (t-1)*length(data.bus), a.i) for t=1:2, a in data.arc]
+
+    c11 = constraint!(
+        w,
+        c9,
+        cidx => p[t,i]
+        for (t,cidx,i) in itr_c11)
+    
     # c11 = constraint!(
     #     w,
     #     c9,
-    #     a.bus => p[a.i]
+    #     a.bus => p[t,a.i]
     #     for a in data.arc)
     
     # c11_1 = constraint!(
     #     w,
     #     c9_1,
-    #     a.bus => p_1[a.i]
+    #     a.bus => p_1[t,a.i]
     #     for a in data.arc)
 
+    c12 = constraint!(
+        w,
+        c10,
+        cidx => q[t,i]
+        for (t,cidx,i) in itr_c11)
 
     # c12 = constraint!(
     #     w,
@@ -437,7 +457,15 @@ function ac_power_model(
     #     a.bus => q_1[a.i]
     #     for a in data.arc)
 
-    # c13 = constraint!(
+    itr_c11 = [(t,g.bus + (t-1)*length(data.bus), g.i) for t=1:2, g in data.gen]
+
+c13 = constraint!(
+        w,
+        c9,
+        cidx =>-pg[t, i]
+        for (t,cidx,i) in itr_c11)
+
+# c13 = constraint!(
     #     w,
     #     c9,
     #     g.bus =>-pg[1, g.i]
@@ -449,7 +477,11 @@ function ac_power_model(
     #     g.bus =>-pg[2, g.i]
     #     for g in data.gen)
 
-
+    c14 = constraint!(
+        w,
+        c10,
+        cidx =>-qg[t,i]
+        for (t,cidx,i) in itr_c11)
     # c14 = constraint!(
     #     w,
     #     c10,
@@ -480,12 +512,12 @@ function ac_power_model(
     #     for (t,g) in itr0
     # )
     
-    c15_ramping = constraint(
-        w,
-        pg[t,g.i] - pg[t-1, g.i] for (t,g) in itr1 ;
-        lcon = [-0.2*data.pmax[g.i] for (t,g) in itr1],
-        ucon = [0.2*data.pmax[g.i] for (t,g) in itr1],
-    )
+    # c15_ramping = constraint(
+    #     w,
+    #     pg[t,g.i] - pg[t-1, g.i] for (t,g) in itr1;
+    #     lcon = [-0.2*data.pmax[g.i] for (t,g) in itr1],
+    #     ucon = [0.2*data.pmax[g.i] for (t,g) in itr1],
+    # )
 
     return ExaModel(w)
 
