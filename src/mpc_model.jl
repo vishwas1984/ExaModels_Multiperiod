@@ -96,12 +96,12 @@ function get_mpcmodel(circuit, demand;
                 @constraint(m, plcurve[g=1:num_gens,p=1:gen[g].n-1],
                             Cg[g] - (((gen[g].coeff[2*p+2] - gen[g].coeff[2*p])/(gen[g].coeff[2*p+1] - gen[g].coeff[2*p-1]))*(baseMVA*Pg_f[g] - gen[g].coeff[2*p-1]) + gen[g].coeff[2*p]) >= 0
                            )
-                @NLexpression(m, obj_gencost, sum(Cg[g] for g=1:num_gens))
+                obj_gencost = sum(Cg[g] for g=1:num_gens)
             else
-                @NLexpression(m, obj_gencost,
+                obj_gencost =
                               sum(gen[g].coeff[gen[g].n-2]*(baseMVA*Pg_f[g])^2
                                 + gen[g].coeff[gen[g].n-1]*(baseMVA*Pg_f[g])
-                                + gen[g].coeff[gen[g].n] for g=1:num_gens))
+                                + gen[g].coeff[gen[g].n] for g=1:num_gens)
             end
         else
             if opt.piecewise
@@ -109,33 +109,34 @@ function get_mpcmodel(circuit, demand;
                 @constraint(m, plcurve[t=1:T,g=1:num_gens,p=1:gen[g].n-1],
                     Cg[t,g] - (((gen[g].coeff[2*p+2] - gen[g].coeff[2*p])/(gen[g].coeff[2*p+1] - gen[g].coeff[2*p-1]))*(baseMVA*Pg[t,g] - gen[g].coeff[2*p-1]) + gen[g].coeff[2*p]) >= 0
                            )
-                @NLexpression(m, obj_gencost, sum(Cg[t,g] for t=1:T,g=1:num_gens))
+                obj_gencost = sum(Cg[t,g] for t=1:T,g=1:num_gens)
             else
-                @NLexpression(m, obj_gencost,
+                obj_gencost =
                               sum(gen[g].coeff[gen[g].n-2]*(baseMVA*Pg[t,g])^2
                                 + gen[g].coeff[gen[g].n-1]*(baseMVA*Pg[t,g])
-                                + gen[g].coeff[gen[g].n] for t=1:T,g=1:num_gens))
+                                + gen[g].coeff[gen[g].n] for t=1:T,g=1:num_gens)
             end
         end
     else
-        @NLexpression(m, obj_gencost, 0)
+        obj_gencost = 0
     end
 
     if opt.freq_ctrl
-        @NLexpression(m, obj_freq_ctrl, 0.5*sum(omega[t]^2 for t=1:T))
+        obj_freq_ctrl = 0.5*sum(omega[t]^2 for t=1:T)
     else
-        @NLexpression(m, obj_freq_ctrl, 0)
+        obj_freq_ctrl = 0
     end
 
     if opt.load_shed
-        @NLexpression(m, obj_load_shed,
+        obj_load_shed =
                       sum(baseMVA*sigma_p[t, b] +
-                          baseMVA*sigma_m[t, b] for t=1:T,b=1:num_buses))
+                          baseMVA*sigma_m[t, b] for t=1:T,b=1:num_buses)
     else
-        @NLexpression(m, obj_load_shed, 0)
+        obj_load_shed = 0
+        # @expression(obj_load_shed = 0)
     end
 
-    @NLobjective(m, Min,
+    @objective(m, Min,
                  obj_gencost + opt.weight_loadshed*obj_load_shed +
                  opt.weight_freqctrl*obj_freq_ctrl)
 
@@ -159,25 +160,34 @@ function get_mpcmodel(circuit, demand;
                         -gen[active_gen[g]].ramp_agc <= Pg_ramp[t,active_gen[g]] - opt.prev_val[active_gen[g]] <= gen[active_gen[g]].ramp_agc)
         end
     end
+    shed = zeros(T, num_buses)
+    surp = zeros(T, num_buses)
 
     if opt.load_shed
-        @NLexpression(m, shed[t=1:T, b=1:num_buses], sigma_p[t, b])
-        @NLexpression(m, surp[t=1:T, b=1:num_buses], sigma_m[t, b])
+        shed = sigma_p
+        surp = sigma_m
+        # @NLexpression(m, surp[t=1:T, b=1:num_buses], sigma_m[t, b])
     else
-        @NLexpression(m, shed[t=1:T, b=1:num_buses], 0)
-        @NLexpression(m, surp[t=1:T, b=1:num_buses], 0)
+        shed .= 0
+        surp .= 0
+        # @NLexpression(m, shed[t=1:T, b=1:num_buses], 0)
+        # @NLexpression(m, surp[t=1:T, b=1:num_buses], 0)
     end
+    lc = zeros(T, num_buses)
 
     if opt.freq_ctrl
+        
         #@NLexpression(m, lc[t=1:T, b=1:num_buses], baseMVA*bus[b].D*omega[t])
-        @NLexpression(m, lc[t=1:T, b=1:num_buses], 0)
+        # @NLexpression(m, lc[t=1:T, b=1:num_buses], 0)
+        lc .=0
     else
-        @NLexpression(m, lc[t=1:T, b=1:num_buses], 0)
+        lc .=0
+        # @NLexpression(m, lc[t=1:T, b=1:num_buses], 0)
     end
 
     # Power flow constraints: real part
 
-    @NLconstraint(m, pfreal[t=1:T,b=1:num_buses],
+    @constraint(m, pfreal[t=1:T,b=1:num_buses],
                   (sum(yline[l].YffR for l in frombus[b])
                    + sum(yline[l].YttR for l in tobus[b])
                    + ybus[b].YshR)*Vm[t,b]^2
@@ -193,7 +203,7 @@ function get_mpcmodel(circuit, demand;
                   == shed[t, b] - surp[t, b])
 
     # Power flow constraints: imaginary part
-    @NLconstraint(m, pfimag[t=1:T,b=1:num_buses],
+    @constraint(m, pfimag[t=1:T,b=1:num_buses],
                   (sum(-yline[l].YffI for l in frombus[b])
                    + sum(-yline[l].YttI for l in tobus[b])
                    - ybus[b].YshI)*Vm[t,b]^2
@@ -229,7 +239,7 @@ function get_mpcmodel(circuit, demand;
         Yim[i] = -yline[l].YffR*yline[l].YftI + yline[l].YffI*yline[l].YftR
     end
 
-    @NLconstraint(m, flowmaxfrom[t=1:T,i=1:num_linelimits],
+    @constraint(m, flowmaxfrom[t=1:T,i=1:num_linelimits],
                   Vm[t,busdict[line[limind[i]].from]]^2 *
                   (Yff_abs2[i]*Vm[t,busdict[line[limind[i]].from]]^2
                    + Yft_abs2[i]*Vm[t,busdict[line[limind[i]].to]]^2
@@ -250,7 +260,7 @@ function get_mpcmodel(circuit, demand;
         Yim[i] = -yline[l].YtfR*yline[l].YttI + yline[l].YtfI*yline[l].YttR
     end
 
-    @NLconstraint(m, flowmaxto[t=1:T,i=1:num_linelimits],
+    @constraint(m, flowmaxto[t=1:T,i=1:num_linelimits],
                   Vm[t,busdict[line[limind[i]].to]]^2 *
                   (Ytf_abs2[i]*Vm[t,busdict[line[limind[i]].from]]^2
                    + Ytt_abs2[i]*Vm[t,busdict[line[limind[i]].to]]^2
@@ -262,7 +272,7 @@ function get_mpcmodel(circuit, demand;
     if opt.sc_constr
         # Power flow constraints: real part
 
-        @NLconstraint(m, pfreal_f[b=1:num_buses],
+        @constraint(m, pfreal_f[b=1:num_buses],
                       (sum(yline[l].YffR for l in frombus[b])
                        + sum(yline[l].YttR for l in tobus[b])
                        + ybus[b].YshR)*Vm_f[b]^2
@@ -278,7 +288,7 @@ function get_mpcmodel(circuit, demand;
                       == 0)
 
         # Power flow constraints: imaginary part
-        @NLconstraint(m, pfimag_f[b=1:num_buses],
+        @constraint(m, pfimag_f[b=1:num_buses],
                       (sum(-yline[l].YffI for l in frombus[b])
                        + sum(-yline[l].YttI for l in tobus[b])
                        - ybus[b].YshI)*Vm_f[b]^2
@@ -314,7 +324,7 @@ function get_mpcmodel(circuit, demand;
             Yim[i] = -yline[l].YffR*yline[l].YftI + yline[l].YffI*yline[l].YftR
         end
 
-        @NLconstraint(m, flowmaxfrom_f[i=1:num_linelimits],
+        @constraint(m, flowmaxfrom_f[i=1:num_linelimits],
                       Vm_f[busdict[line[limind[i]].from]]^2 *
                       (Yff_abs2[i]*Vm_f[busdict[line[limind[i]].from]]^2
                        + Yft_abs2[i]*Vm_f[busdict[line[limind[i]].to]]^2
@@ -335,7 +345,7 @@ function get_mpcmodel(circuit, demand;
             Yim[i] = -yline[l].YtfR*yline[l].YttI + yline[l].YtfI*yline[l].YttR
         end
 
-        @NLconstraint(m, flowmaxto_f[i=1:num_linelimits],
+        @constraint(m, flowmaxto_f[i=1:num_linelimits],
                       Vm_f[busdict[line[limind[i]].to]]^2 *
                       (Ytf_abs2[i]*Vm_f[busdict[line[limind[i]].from]]^2
                        + Ytt_abs2[i]*Vm_f[busdict[line[limind[i]].to]]^2
@@ -385,7 +395,7 @@ function get_mpcpfmodel(circuit, demand)
     @objective(m, Min, 0)
 
     # Power flow constraints: real part
-    @NLconstraint(m, pfreal[t=1:T,b=1:num_buses],
+    @constraint(m, pfreal[t=1:T,b=1:num_buses],
                   (sum(yline[l].YffR for l in frombus[b])
                    + sum(yline[l].YttR for l in tobus[b])
                    + ybus[b].YshR)*Vm[t,b]^2
@@ -401,7 +411,7 @@ function get_mpcpfmodel(circuit, demand)
                   == 0)
 
     # Power flow constraints: imaginary part
-    @NLconstraint(m, pfimag[t=1:T,b=1:num_buses],
+    @constraint(m, pfimag[t=1:T,b=1:num_buses],
                   (sum(-yline[l].YffI for l in frombus[b])
                    + sum(-yline[l].YttI for l in tobus[b])
                    - ybus[b].YshI)*Vm[t,b]^2
