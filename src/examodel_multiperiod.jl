@@ -9,7 +9,7 @@ include("mpc_2.jl")
 
 case  = "data/case1354pegase"
 scen = "data/case1354pegase/halfhour_30"
-T = 30
+T = 10
 H = 1
 load_scale = 1.0
 ramp_scale = 0.5
@@ -171,10 +171,10 @@ println("Options specified:")
         # end
 
         println("\nOmega and Frequencies:")
-        # for t in 1:T
-        #     @printf("%.6e    %.16f\n",
-        #             value(m_sc[:omega][t]), 60 + 60*value(m_sc[:omega][t]))
-        # end
+        for t in 1:T
+            @printf("%.6e    %.16f\n",
+                    value(m_sc[:omega][t]), 60 + 60*value(m_sc[:omega][t]))
+        end
 
         pos_gen = findall(x -> x != neg_gen, collect(1:length(circuit.gen)))
         pg_old_x = zeros(length(pos_gen))
