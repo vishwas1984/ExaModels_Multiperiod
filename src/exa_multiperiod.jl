@@ -9,7 +9,7 @@ include("mpc_2.jl")
 
 case  = "data/case1354pegase"
 scen = "data/case1354pegase/halfhour_30"
-T = 5
+T = 10
 H = 1
 load_scale = 1.0
 ramp_scale = 0.7

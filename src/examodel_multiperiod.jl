@@ -1,6 +1,6 @@
 using Ipopt, NLPModelsIpopt
 using JuMP
-using ExaModels
+using ExaModels, MadNLPGPU, MadNLP
 using Random
 using DelimitedFiles, Printf
 include("mpc_data.jl")
@@ -244,8 +244,8 @@ println("Options specified:")
         # MathProgBase.setwarmstart!(in_cur, in_cur.inner.x)
         # MathProgBase.optimize!(in_cur)
 
-        em = ExaModel(m_cur)
-        result = ipopt(em)
+        em = ExaModel(m_cur, backend = CUDABackend)
+        result = madnlp(em)
         print(result)
 
         # stat = MathProgBase.status(in_cur)
